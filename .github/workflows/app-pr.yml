@@ -1,0 +1,42 @@
+name: app-pr
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: open (App opens a PR) or approve (App approves a PR)
+        required: true
+        type: choice
+        options: [open, approve]
+      pr:
+        description: PR number to approve
+        required: false
+permissions: {}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: in-a
+      - name: open
+        if: inputs.mode == 'open'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          BRANCH="app-pr-${{ github.run_id }}"
+          BASE=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
+          gh api -X POST "repos/$REPO/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$BASE" > /dev/null
+          gh api -X PUT "repos/$REPO/contents/app-$BRANCH.txt" -f message="test: app change" -f branch="$BRANCH" -f content=YXBwCg== > /dev/null
+          gh pr create -R "$REPO" -H "$BRANCH" -B main -t "step 12: PR opened by the App" -b "Opened with an App installation token"
+      - name: approve
+        if: inputs.mode == 'approve'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ inputs.pr }}
+        run: |
+          gh api -X POST "repos/$REPO/pulls/$PR/reviews" -f event=APPROVE -f body="approved by the App" -i 2>&1 | grep -i -E '^HTTP|message|"state"' || true
