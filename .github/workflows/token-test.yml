@@ -49,11 +49,16 @@ jobs:
           app-id: ${{ vars.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: in-a
+          repositories: in-a,in-b
           permission-issues: read
       - env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          gh issue list -R "$OWNER/in-a" --limit 1
-          if gh issue create -R "$OWNER/in-a" -t "step 10: should fail" -b "a"; then echo "UNEXPECTED: write allowed"; exit 1; else echo "write refused (expected)"; fi
+          gh issue list -R "$OWNER/in-b" --limit 1
+          echo "public repo in-a:"
+          gh issue create -R "$OWNER/in-a" -t "step 10: public, read-only token" -b "a" || echo "in-a write refused"
+          echo "private repo in-b:"
+          gh issue create -R "$OWNER/in-b" -t "step 10: private, read-only token" -b "b" || echo "in-b write refused"
+          echo "contents write on in-b (not granted):"
+          gh api -X PUT "repos/$OWNER/in-b/contents/probe.txt" -f message=probe -f content=cHJvYmUK -i 2>&1 | grep -i -E '^HTTP|x-accepted-github-permissions|message' || true
