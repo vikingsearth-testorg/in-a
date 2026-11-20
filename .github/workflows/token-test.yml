@@ -1,0 +1,59 @@
+name: token-test
+on: workflow_dispatch
+permissions: {}
+jobs:
+  # Step 8: token for in-a and in-b, out-c must be refused
+  both-repos:
+    runs-on: ubuntu-latest
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: in-a,in-b
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          gh issue create -R "$OWNER/in-a" -t "step 8: from app" -b "a"
+          gh issue create -R "$OWNER/in-b" -t "step 8: from app" -b "b"
+          if gh issue list -R "$OWNER/out-c"; then echo "UNEXPECTED: out-c reachable"; exit 1; else echo "out-c refused (expected)"; fi
+          gh api rate_limit --jq .resources.core
+
+  # Step 9: token narrowed to in-a only, in-b must be refused
+  one-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: in-a
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          if gh issue create -R "$OWNER/in-b" -t "step 9: should fail" -b "b"; then echo "UNEXPECTED: in-b writable"; exit 1; else echo "in-b refused (expected)"; fi
+
+  # Step 10: read-only issues token from a read-write App
+  read-only:
+    runs-on: ubuntu-latest
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: in-a
+          permission-issues: read
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          gh issue list -R "$OWNER/in-a" --limit 1
+          if gh issue create -R "$OWNER/in-a" -t "step 10: should fail" -b "a"; then echo "UNEXPECTED: write allowed"; exit 1; else echo "write refused (expected)"; fi
