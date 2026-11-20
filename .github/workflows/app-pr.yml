@@ -6,7 +6,7 @@ on:
         description: open (App opens a PR) or approve (App approves a PR)
         required: true
         type: choice
-        options: [open, approve]
+        options: [open, approve, workflow-push]
       pr:
         description: PR number to approve
         required: false
@@ -32,6 +32,21 @@ jobs:
           gh api -X POST "repos/$REPO/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$BASE" > /dev/null
           gh api -X PUT "repos/$REPO/contents/app-$BRANCH.txt" -f message="test: app change" -f branch="$BRANCH" -f content=YXBwCg== > /dev/null
           gh pr create -R "$REPO" -H "$BRANCH" -B main -t "step 12: PR opened by the App" -b "Opened with an App installation token"
+      - name: workflow-push
+        if: inputs.mode == 'workflow-push'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          BRANCH="app-wf-${{ github.run_id }}"
+          BASE=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
+          gh api -X POST "repos/$REPO/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$BASE" > /dev/null
+          echo "plain file:"
+          gh api -X PUT "repos/$REPO/contents/plain-$BRANCH.txt" -f message="test: plain file" -f branch="$BRANCH" -f content=cGxhaW4K -i 2>&1 | grep -E '^HTTP' || true
+          echo "workflow file:"
+          gh api -X PUT "repos/$REPO/contents/.github/workflows/app-$BRANCH.yml" -f message="ci: app-written workflow" -f branch="$BRANCH" \
+            -f content="$(printf 'name: app-written\non: workflow_dispatch\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n' | base64 -w0)" \
+            -i 2>&1 | grep -i -E '^HTTP|x-accepted-github-permissions|"message"' || true
       - name: approve
         if: inputs.mode == 'approve'
         env:
